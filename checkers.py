@@ -177,40 +177,80 @@ def draw_valid_moves(moves):
         center_y = row * SQUARE_SIZE + SQUARE_SIZE // 2
         pygame.draw.circle(screen, VALID_MOVE, (center_x, center_y), 15)
 
-def get_valid_moves(row, col):
-    """Get valid moves for a piece"""
-    moves = []
+def get_capture_moves(row, col):
+    """Get only capture moves for a piece"""
+    captures = []
     piece = board[row][col]
-    if not piece:
-        return moves
+    if not piece or piece == 'dio':
+        return captures
     
     # Check if piece is powered up
     state = piece_states.get((row, col), {'kills': 0, 'powered_up': False})
     
     # Powered-up pieces can move in all directions
     if state['powered_up']:
-        directions = [-1, 1]  # Both forward and backward
+        directions = [-1, 1]
     else:
-        # Normal pieces move forward only
         directions = [-1 if piece == 'red' else 1]
     
-    # Check diagonal moves
+    # Check for captures only
     for direction in directions:
         for dc in [-1, 1]:
             new_row = row + direction
             new_col = col + dc
             
-            # Simple move
             if 0 <= new_row < BOARD_SIZE and 0 <= new_col < BOARD_SIZE:
-                if board[new_row][new_col] is None:
-                    moves.append((new_row, new_col, None))
-                # Check for capture
-                elif board[new_row][new_col] and board[new_row][new_col] != piece:
+                target = board[new_row][new_col]
+                if target and target != piece and target != 'dio':
                     jump_row = new_row + direction
                     jump_col = new_col + dc
                     if 0 <= jump_row < BOARD_SIZE and 0 <= jump_col < BOARD_SIZE:
                         if board[jump_row][jump_col] is None:
-                            moves.append((jump_row, jump_col, (new_row, new_col)))
+                            captures.append((jump_row, jump_col, (new_row, new_col)))
+    
+    return captures
+
+def get_all_captures_for_player(player):
+    """Get all possible captures for a player"""
+    all_captures = []
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            if board[row][col] == player:
+                captures = get_capture_moves(row, col)
+                if captures:
+                    all_captures.extend([(row, col, cap) for cap in captures])
+    return all_captures
+
+def get_valid_moves(row, col, must_capture=False):
+    """Get valid moves for a piece"""
+    piece = board[row][col]
+    if not piece or piece == 'dio':
+        return []
+    
+    # First check for captures
+    captures = get_capture_moves(row, col)
+    
+    # If must capture or captures available, return only captures
+    if must_capture or captures:
+        return captures
+    
+    # Otherwise allow normal moves
+    moves = []
+    state = piece_states.get((row, col), {'kills': 0, 'powered_up': False})
+    
+    if state['powered_up']:
+        directions = [-1, 1]
+    else:
+        directions = [-1 if piece == 'red' else 1]
+    
+    for direction in directions:
+        for dc in [-1, 1]:
+            new_row = row + direction
+            new_col = col + dc
+            
+            if 0 <= new_row < BOARD_SIZE and 0 <= new_col < BOARD_SIZE:
+                if board[new_row][new_col] is None:
+                    moves.append((new_row, new_col, None))
     
     return moves
 
@@ -902,6 +942,9 @@ init_board()
 running = True
 clock = pygame.time.Clock()
 valid_moves = []
+must_continue_capture = False
+continuing_piece = None
+first_move_of_turn = True
 
 while running:
     for event in pygame.event.get():
@@ -918,8 +961,27 @@ while running:
                 moved = False
                 for move_row, move_col, captured in valid_moves:
                     if move_row == row and move_col == col:
+                        was_capture = captured is not None
                         move_piece(selected_piece[0], selected_piece[1], row, col, captured)
+                        
+                        # If it was a capture, check if piece can capture again
+                        if was_capture:
+                            next_captures = get_capture_moves(row, col)
+                            if next_captures:
+                                # Must continue capturing with same piece
+                                selected_piece = (row, col)
+                                valid_moves = next_captures
+                                must_continue_capture = True
+                                continuing_piece = (row, col)
+                                first_move_of_turn = False
+                                moved = True
+                                break
+                        
+                        # No more captures, end turn
                         current_player = 'blue' if current_player == 'red' else 'red'
+                        must_continue_capture = False
+                        continuing_piece = None
+                        first_move_of_turn = True
                         moved = True
                         
                         # Check for ZA WARUDO after move
@@ -935,18 +997,28 @@ while running:
                         
                         break
                 
-                selected_piece = None
-                valid_moves = []
+                if not must_continue_capture:
+                    selected_piece = None
+                    valid_moves = []
                 
                 # If didn't move, check if selecting new piece
-                if not moved and board[row][col] == current_player:
+                if not moved and not must_continue_capture and board[row][col] == current_player:
                     selected_piece = (row, col)
-                    valid_moves = get_valid_moves(row, col)
+                    # First move of turn: free choice between capture and normal move
+                    # After first capture: must continue capturing if possible
+                    if first_move_of_turn:
+                        valid_moves = get_valid_moves(row, col, must_capture=False)
+                    else:
+                        valid_moves = get_valid_moves(row, col, must_capture=True)
             else:
                 # Select a piece
                 if board[row][col] == current_player:
                     selected_piece = (row, col)
-                    valid_moves = get_valid_moves(row, col)
+                    # First move of turn: free choice between capture and normal move
+                    if first_move_of_turn:
+                        valid_moves = get_valid_moves(row, col, must_capture=False)
+                    else:
+                        valid_moves = get_valid_moves(row, col, must_capture=True)
     
     # Draw everything
     screen.fill(BG_COLOR)

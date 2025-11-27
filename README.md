@@ -14,6 +14,14 @@ A checkers game featuring Goku and Gojo as game pieces!
 - Capture enemy pieces by jumping over them diagonally
 - Red (Goku) moves first
 
+## Capture Rules
+
+- **First move is free** - On your first move of the turn, you can choose to capture OR move normally
+- **Multi-capture chains** - Once you capture, if the same piece can capture again, it MUST continue capturing
+- The piece keeps moving until no more captures are available
+- Only after all captures are complete does the turn end
+- This gives you strategic choice: capture now or position for a better attack later!
+
 ## Power-Up System
 
 ### Goku (Red Pieces)
